@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 LED — BT Voice Terminal</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+:root {
+  --bg:      #050a0e;
+  --panel:   #080f18;
+  --border:  #0d3a52;
+  --accent:  #00d4ff;
+  --green:   #00ff9d;
+  --orange:  #ff6b35;
+  --warn:    #ffb800;
+  --danger:  #ff2d55;
+  --purple:  #cc88ff;
+  --text:    #b8d4e0;
+  --dim:     #2e5060;
+  --glow:    0 0 14px rgba(0,212,255,0.55);
+  --glow-g:  0 0 14px rgba(0,255,157,0.55);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Share Tech Mono',monospace;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.07) 2px,rgba(0,0,0,.07) 4px);pointer-events:none;z-index:999}
+body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,.025) 1px,transparent 1px);background-size:36px 36px;pointer-events:none;z-index:0}
+#app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;padding:10px;gap:8px}
+
+/* HEADER */
+header{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--panel);border:1px solid var(--border);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%);flex-shrink:0}
+.logo{font-family:'Orbitron',monospace;font-weight:900;font-size:1rem;color:var(--accent);text-shadow:var(--glow);letter-spacing:3px}
+.logo em{color:var(--green);font-style:normal}
+.hdr-right{display:flex;align-items:center;gap:18px}
+.spill{display:flex;align-items:center;gap:7px;font-size:.68rem;color:var(--dim)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:background .3s,box-shadow .3s}
+.dot.connected{background:var(--green);box-shadow:var(--glow-g);animation:blink 2s infinite}
+.dot.listening{background:var(--accent);box-shadow:var(--glow);animation:blink .7s infinite}
+.dot.error{background:var(--danger)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* BODY */
+.body{display:grid;grid-template-columns:270px 1fr;gap:8px;flex:1;min-height:0}
+
+/* PANELS */
+.panel{background:var(--panel);border:1px solid var(--border);padding:12px;display:flex;flex-direction:column;gap:9px}
+.ptitle{font-family:'Orbitron',monospace;font-size:.58rem;color:var(--accent);letter-spacing:3px;border-bottom:1px solid var(--border);padding-bottom:7px;flex-shrink:0}
+
+/* BUTTONS */
+.btn{font-family:'Share Tech Mono',monospace;font-size:.78rem;letter-spacing:1px;padding:9px 14px;border:1px solid currentColor;background:transparent;cursor:pointer;transition:all .18s;clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+.btn-bt{color:var(--accent);width:100%}
+.btn-bt:hover{background:rgba(0,212,255,.1);box-shadow:var(--glow)}
+.btn-bt.disc{color:var(--danger);border-color:var(--danger)}
+.btn-bt.disc:hover{background:rgba(255,45,85,.1)}
+.btn-mic{color:var(--green);flex:1}
+.btn-mic:hover,.btn-mic.on{background:rgba(0,255,157,.1);box-shadow:var(--glow-g)}
+.btn-mic.on{animation:mpulse 1s infinite}
+@keyframes mpulse{0%,100%{box-shadow:0 0 8px rgba(0,255,157,.4)}50%{box-shadow:0 0 22px rgba(0,255,157,.9)}}
+.btn-send{color:var(--orange);flex:1}
+.btn-send:hover{background:rgba(255,107,53,.1);box-shadow:0 0 12px rgba(255,107,53,.5)}
+
+/* DEVINFO */
+.devinfo{font-size:.7rem;color:var(--dim);line-height:2}
+.devinfo .v{color:var(--green)}
+
+/* STATE ROWS */
+.sr{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;font-size:.7rem;border:1px solid var(--border);background:rgba(0,0,0,.35)}
+.sr .lbl{color:var(--dim);letter-spacing:1px}
+.sr .val{font-family:'Orbitron',monospace;font-size:.72rem;color:var(--accent);text-shadow:var(--glow)}
+
+/* MODES GRID */
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px;overflow-y:auto;flex:1}
+.mgrid::-webkit-scrollbar{width:3px}
+.mgrid::-webkit-scrollbar-thumb{background:var(--border)}
+.mb{font-family:'Share Tech Mono',monospace;font-size:.65rem;letter-spacing:1px;padding:6px 4px;border:1px solid var(--border);background:rgba(0,0,0,.3);color:var(--text);cursor:pointer;text-align:center;transition:all .15s}
+.mb:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,.06)}
+.mb.active{border-color:var(--green);color:var(--green);background:rgba(0,255,157,.08);box-shadow:var(--glow-g)}
+
+/* RIGHT */
+.right{display:flex;flex-direction:column;gap:8px;min-height:0}
+
+/* TERMINAL */
+.term{flex:1;min-height:0;background:#020608;border:1px solid var(--border);padding:10px;overflow-y:auto;font-size:.73rem;line-height:1.75}
+.term::-webkit-scrollbar{width:4px}
+.term::-webkit-scrollbar-thumb{background:var(--border)}
+.ll{display:flex;gap:9px;margin-bottom:1px}
+.lt{color:var(--dim);min-width:68px;flex-shrink:0}
+.lk{min-width:52px;flex-shrink:0}
+.lm{flex:1;word-break:break-all}
+.l-sys .lk{color:var(--warn)}      .l-sys .lm{color:#fff4cc}
+.l-sent .lk{color:var(--accent)}   .l-sent .lm{color:#d0f4ff}
+.l-recv .lk{color:var(--green)}    .l-recv .lm{color:#ccffee}
+.l-err .lk{color:var(--danger)}    .l-err .lm{color:#ffcccc}
+.l-vox .lk{color:var(--purple)}    .l-vox .lm{color:#f0d0ff}
+
+/* INPUT BAR */
+.ibar{background:var(--panel);border:1px solid var(--border);padding:10px;display:flex;flex-direction:column;gap:7px;flex-shrink:0}
+.wrow{display:flex;align-items:center;gap:8px;height:34px;border:1px solid var(--border);background:#020608;padding:0 10px;overflow:hidden}
+.wsegs{display:flex;align-items:center;gap:2px}
+.ws{width:3px;background:var(--green);border-radius:1px;height:4px;transition:height .08s,opacity .08s;opacity:.2}
+.wlbl{font-size:.65rem;color:var(--dim);margin-left:4px}
+.trx{font-size:.7rem;color:var(--dim);min-height:16px;padding:0 2px}
+.trx.on{color:var(--purple)}
+.irow{display:flex;gap:7px}
+#manIn{flex:1;background:#020608;border:1px solid var(--border);color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:.8rem;padding:9px 13px;outline:none;letter-spacing:1px;transition:border-color .2s}
+#manIn:focus{border-color:var(--accent);box-shadow:var(--glow)}
+#manIn::placeholder{color:var(--dim)}
+
+/* MODALS */
+.ovl{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center}
+.ovl.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--accent);box-shadow:var(--glow);padding:26px 30px;min-width:330px;clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,0 100%)}
+.mtitle{font-family:'Orbitron',monospace;font-size:.82rem;color:var(--accent);letter-spacing:2px;margin-bottom:18px;text-shadow:var(--glow)}
+.mlbl{font-size:.68rem;color:var(--dim);letter-spacing:1px;margin-bottom:7px}
+.mhint{font-size:.63rem;color:var(--dim);text-align:center;margin:6px 0 18px}
+.mhint code{color:var(--green)}
+.mbtns{display:flex;gap:8px}
+.rval{text-align:center;font-family:'Orbitron',monospace;font-size:1.5rem;color:var(--accent);text-shadow:var(--glow);margin:8px 0 10px}
+input[type=range]{width:100%;-webkit-appearance:none;background:transparent;height:4px;margin-bottom:4px}
+input[type=range]::-webkit-slider-runnable-track{background:var(--border);height:4px;border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);box-shadow:var(--glow);margin-top:-7px;cursor:pointer}
+.mti{width:100%;background:#020608;border:1px solid var(--border);color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:1.3rem;padding:11px 14px;outline:none;text-align:center;letter-spacing:4px;margin-bottom:5px;transition:border-color .2s}
+.mti:focus{border-color:var(--accent);box-shadow:var(--glow)}
+.mti.err{border-color:var(--danger)!important}
+.btn-ok{color:var(--green);border-color:var(--green);flex:1}
+.btn-ok:hover{background:rgba(0,255,157,.1);box-shadow:var(--glow-g)}
+.btn-cn{color:var(--dim);flex:1}
+.btn-cn:hover{color:var(--danger);border-color:var(--danger)}
+.cdeco{position:fixed;width:36px;height:36px;opacity:.22;pointer-events:none;z-index:1}
+.cdeco.tl{top:8px;left:8px;border-top:2px solid var(--accent);border-left:2px solid var(--accent)}
+.cdeco.br{bottom:8px;right:8px;border-bottom:2px solid var(--accent);border-right:2px solid var(--accent)}
+</style>
+</head>
+<body>
+<div class="cdeco tl"></div>
+<div class="cdeco br"></div>
+
+<!-- SPEED MODAL -->
+<div class="ovl" id="mSpeed">
+  <div class="modal">
+    <div class="mtitle">⚡ SPEED CONTROL</div>
+    <div class="mlbl">SPEED LEVEL  [ 1 – 10 ]</div>
+    <div class="rval" id="sVal">5</div>
+    <input type="range" min="1" max="10" value="5" id="sRange" oninput="document.getElementById('sVal').textContent=this.value">
+    <div class="mhint">Sends → <code>speed:&lt;1-10&gt;</code>  (controls animation frame rate)</div>
+    <div class="mbtns">
+      <button class="btn btn-cn" onclick="closeM('mSpeed')">CANCEL</button>
+      <button class="btn btn-ok" onclick="submitSpeed()">SEND ▶</button>
+    </div>
+  </div>
+</div>
+
+<!-- BRIGHT MODAL -->
+<div class="ovl" id="mBright">
+  <div class="modal">
+    <div class="mtitle">💡 BRIGHTNESS</div>
+    <div class="mlbl">BRIGHTNESS  [ 10 – 80 ]  <span style="color:var(--warn);font-size:.58rem">⚠ HARD CAP 80 (no-resistor safe)</span></div>
+    <div class="rval" id="bVal">60</div>
+    <input type="range" min="10" max="80" value="60" id="bRange" oninput="document.getElementById('bVal').textContent=this.value">
+    <div class="mhint">Sends → <code>bright:&lt;10-80&gt;</code>  (ESP32 enforces max 80)</div>
+    <div class="mbtns">
+      <button class="btn btn-cn" onclick="closeM('mBright')">CANCEL</button>
+      <button class="btn btn-ok" onclick="submitBright()">SEND ▶</button>
+    </div>
+  </div>
+</div>
+
+<!-- TIME MODAL -->
+<div class="ovl" id="mTime">
+  <div class="modal">
+    <div class="mtitle">⏱ TIME SET</div>
+    <div class="mlbl">FORMAT  HH : MM : SS</div>
+    <input type="text" class="mti" id="tInput" placeholder="00:00:00" maxlength="8"
+      oninput="fmtTime(this)" onkeydown="if(event.key==='Enter')submitTime()">
+    <div class="mhint">Sends → <code>time:HH:MM:SS</code>  (e.g. time:01:30:00)</div>
+    <div class="mbtns">
+      <button class="btn btn-cn" onclick="closeM('mTime')">CANCEL</button>
+      <button class="btn btn-ok" onclick="submitTime()">SEND ▶</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="logo">ESP32 <em>LED</em> CTRL</div>
+    <div class="hdr-right">
+      <div class="spill"><div class="dot" id="btDot"></div><span id="btTxt">DISCONNECTED</span></div>
+      <div class="spill"><div class="dot" id="micDot"></div><span id="micTxt">MIC OFF</span></div>
+    </div>
+  </header>
+
+  <div class="body">
+
+    <!-- LEFT -->
+    <div style="display:flex;flex-direction:column;gap:8px;min-height:0;overflow:hidden">
+
+      <div class="panel" style="flex-shrink:0">
+        <div class="ptitle">// BLUETOOTH  •  ESP32_LED</div>
+        <button class="btn btn-bt" id="btBtn" onclick="toggleBT()">[ CONNECT DEVICE ]</button>
+        <div class="devinfo">
+          <div>DEVICE : <span class="v" id="dName">—</span></div>
+          <div>STATE  : <span class="v" id="dState">IDLE</span></div>
+          <div>BT NAME: <span class="v">ESP32_LED</span></div>
+        </div>
+      </div>
+
+      <div class="panel" style="flex-shrink:0">
+        <div class="ptitle">// LAST SENT STATE</div>
+        <div class="sr"><span class="lbl">POWER</span> <span class="val" id="sPow">—</span></div>
+        <div class="sr"><span class="lbl">MODE</span>  <span class="val" id="sMod">normal</span></div>
+        <div class="sr"><span class="lbl">SPEED</span> <span class="val" id="sSpd">5</span></div>
+        <div class="sr"><span class="lbl">BRIGHT</span><span class="val" id="sBrt">60</span></div>
+        <div class="sr"><span class="lbl">TIME</span>  <span class="val" id="sTme">—</span></div>
+      </div>
+
+      <div class="panel" style="flex:1;min-height:0">
+        <div class="ptitle">// LED MODES  (tap to send)</div>
+        <div class="mgrid" id="mgrid"></div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right">
+      <div class="term" id="term"></div>
+      <div class="ibar">
+        <div class="wrow">
+          <div class="wsegs" id="wsegs"></div>
+          <span class="wlbl" id="wlbl">VOICE INACTIVE</span>
+        </div>
+        <div class="trx" id="trx">Tap MIC and speak a command…</div>
+        <div class="irow">
+          <input type="text" id="manIn" placeholder="Type any command (e.g. fire, speed:7, on)…" onkeydown="if(event.key==='Enter')sendManual()">
+          <button class="btn btn-mic" id="micBtn" onclick="toggleMic()">🎙 MIC</button>
+          <button class="btn btn-send" onclick="sendManual()">SEND ▶</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── MODES — exact strings from ESP32 code ──────────────────
+const MODES = ['normal','gaming','party','sad','relax','fire','ocean','aurora','focus','sunrise','police','meteor','candy','galaxy','pulse','glitter'];
+const EMOJI = {normal:'🌟',gaming:'🎮',party:'🎉',sad:'💙',relax:'🌿',fire:'🔥',ocean:'🌊',aurora:'🌌',focus:'🎯',sunrise:'🌅',police:'🚔',meteor:'☄️',candy:'🍬',galaxy:'🌠',pulse:'💓',glitter:'✨'};
+
+// ── STATE ──────────────────────────────────────────────────
+let btDevice=null,btServer=null,btChar=null,isConn=false;
+let recog=null,listening=false;
+let wSegs=[],wTimer=null;
+let curMode='normal';
+
+// BLE UART service (HM-10, CC2541 modules common with ESP32)
+const UART_SVC  = '0000ffe0-0000-1000-8000-00805f9b34fb';
+const UART_CHAR = '0000ffe1-0000-1000-8000-00805f9b34fb';
+
+// ── INIT ───────────────────────────────────────────────────
+(()=>{
+  buildModes(); buildWave();
+  log('ESP32 LED Controller v2.1 — BT Voice Terminal','sys');
+  log('Commands: on | off | bright:10-80 | speed:1-10 | <mode name>','sys');
+  log('Modes: '+MODES.join(', '),'sys');
+  log('Voice keywords → "speed", "bright", "time", any mode name, "on", "off"','sys');
+  log('Select your ESP32_LED device via the CONNECT button.','sys');
+})();
+
+function buildModes(){
+  const g=document.getElementById('mgrid');
+  MODES.forEach(m=>{
+    const b=document.createElement('button');
+    b.className='mb'; b.id='mb-'+m;
+    b.textContent=(EMOJI[m]||'')+' '+m.toUpperCase();
+    b.onclick=()=>sendMode(m);
+    g.appendChild(b);
+  });
+  highlightMode('normal');
+}
+
+function buildWave(){
+  const c=document.getElementById('wsegs');
+  for(let i=0;i<30;i++){
+    const s=document.createElement('div');
+    s.className='ws'; c.appendChild(s); wSegs.push(s);
+  }
+}
+
+// ── LOG ────────────────────────────────────────────────────
+function ts(){
+  const d=new Date();
+  return [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+}
+function log(msg,cls){
+  const T=document.getElementById('term');
+  const TAG={sys:'[SYS]',sent:'[OUT]',recv:'[IN]',err:'[ERR]',vox:'[VOX]'};
+  const d=document.createElement('div'); d.className='ll l-'+cls;
+  d.innerHTML=`<span class="lt">${ts()}</span><span class="lk">${TAG[cls]||'[?]'}</span><span class="lm">${esc(msg)}</span>`;
+  T.appendChild(d); T.scrollTop=T.scrollHeight;
+}
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// ── BLUETOOTH ──────────────────────────────────────────────
+async function toggleBT(){
+  if(isConn){disconnBT();return;}
+  if(!navigator.bluetooth){log('Web Bluetooth not supported — use Chrome or Edge on desktop.','err');return;}
+  try{
+    log('Scanning… select "ESP32_LED" from the browser popup.','sys');
+    btDevice=await navigator.bluetooth.requestDevice({
+      acceptAllDevices:true,
+      optionalServices:[UART_SVC,'0000fff0-0000-1000-8000-00805f9b34fb']
+    });
+    btDevice.addEventListener('gattserverdisconnected',onDisconn);
+    log('Device: '+(btDevice.name||'Unknown'),'sys');
+    btServer=await btDevice.gatt.connect();
+    log('GATT connected — finding TX characteristic…','sys');
+
+    // Try UART service UUIDs
+    for(const uuid of [UART_SVC,'0000fff0-0000-1000-8000-00805f9b34fb']){
+      try{
+        const svc=await btServer.getPrimaryService(uuid);
+        const chars=await svc.getCharacteristics();
+        for(const c of chars){
+          if(c.properties.write||c.properties.writeWithoutResponse){btChar=c;break;}
+        }
+        if(btChar){log('TX char found: '+btChar.uuid,'sys');break;}
+      }catch(e){}
+    }
+
+    // Fallback: enumerate all services
+    if(!btChar){
+      try{
+        const svcs=await btServer.getPrimaryServices();
+        outer:for(const s of svcs){
+          const cs=await s.getCharacteristics();
+          for(const c of cs){
+            if(c.properties.write||c.properties.writeWithoutResponse){
+              btChar=c;log('TX char (fallback): '+c.uuid,'sys');break outer;
+            }
+          }
+        }
+      }catch(e){log('Enumerate error: '+e.message,'err');}
+    }
+
+    setConn(true,btDevice.name||'Unknown');
+    if(!btChar) log('⚠ No writable characteristic found. Sending disabled.','err');
+    else log('Ready! Speak or type commands to send to ESP32.','sys');
+  }catch(e){
+    if(e.name!=='NotFoundError') log('BT error: '+e.message,'err');
+    else log('Device selection cancelled.','sys');
+    setConn(false);
+  }
+}
+
+function disconnBT(){
+  if(btServer?.connected) btServer.disconnect();
+  onDisconn();
+}
+function onDisconn(){
+  setConn(false); btChar=null; btServer=null;
+  log('Bluetooth disconnected.','sys');
+}
+function setConn(on,name=''){
+  isConn=on;
+  const btn=document.getElementById('btBtn'), dot=document.getElementById('btDot');
+  if(on){
+    btn.textContent='[ DISCONNECT ]'; btn.classList.add('disc');
+    dot.className='dot connected';
+    document.getElementById('btTxt').textContent='CONNECTED';
+    document.getElementById('dName').textContent=name;
+    document.getElementById('dState').textContent='ACTIVE';
+  }else{
+    btn.textContent='[ CONNECT DEVICE ]'; btn.classList.remove('disc');
+    dot.className='dot';
+    document.getElementById('btTxt').textContent='DISCONNECTED';
+    document.getElementById('dName').textContent='—';
+    document.getElementById('dState').textContent='IDLE';
+  }
+}
+
+// ── SEND ───────────────────────────────────────────────────
+async function send(cmd){
+  cmd=cmd.trim(); if(!cmd) return;
+  if(!isConn||!btChar){log('[NO BT] '+cmd,'err');return;}
+  try{
+    const enc=new TextEncoder().encode(cmd+'\n');
+    if(btChar.properties.writeWithoutResponse) await btChar.writeValueWithoutResponse(enc);
+    else await btChar.writeValue(enc);
+    log(cmd,'sent');
+  }catch(e){log('Send error: '+e.message,'err');}
+}
+
+function sendManual(){
+  const el=document.getElementById('manIn');
+  const v=el.value.trim(); if(!v) return;
+  parseCmd(v); el.value='';
+}
+
+function sendMode(m){
+  // ESP32 expects just the mode name lowercase
+  send(m);
+  highlightMode(m);
+  document.getElementById('sMod').textContent=m;
+  log('Mode → '+m,'sys');
+}
+
+function highlightMode(m){
+  MODES.forEach(x=>{
+    const b=document.getElementById('mb-'+x);
+    if(b) b.classList.toggle('active',x===m);
+  });
+  curMode=m;
+}
+
+// ── COMMAND PARSER  matches ESP32 SerialBT handler ─────────
+// ESP32 does: input.trim(); input.toLowerCase();
+// then checks: "on","off","bright:","speed:", else → mode
+function parseCmd(raw){
+  const s=raw.toLowerCase().trim();
+
+  // Power
+  if(s==='on'||s.includes('turn on')||s.includes('led on')){
+    send('on'); document.getElementById('sPow').textContent='ON'; return;
+  }
+  if(s==='off'||s.includes('turn off')||s.includes('led off')){
+    send('off'); document.getElementById('sPow').textContent='OFF'; return;
+  }
+
+  // Special voice triggers → open modal
+  if(s.includes('speed'))  {openM('mSpeed');return;}
+  if(s.includes('bright'))  {openM('mBright');return;}
+  if(s.includes('time'))    {openM('mTime');return;}
+
+  // Mode name detection
+  for(const m of MODES){
+    if(s===m||s.includes(m)){sendMode(m);return;}
+  }
+
+  // Raw passthrough (user typed exact command like "bright:70")
+  send(raw);
+}
+
+// ── VOICE ──────────────────────────────────────────────────
+function setupRecog(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){log('Speech recognition not supported — use Chrome/Edge.','err');return false;}
+  recog=new SR();
+  recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
+  recog.onresult=e=>{
+    let interim='',final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      e.results[i].isFinal?final+=t:interim+=t;
+    }
+    const disp=final||interim;
+    const el=document.getElementById('trx');
+    el.textContent=disp||'Listening…'; el.className='trx'+(disp?' on':'');
+    if(final.trim()){
+      log(final.trim(),'vox');
+      el.className='trx';
+      parseCmd(final.trim());
+    }
+  };
+  recog.onerror=e=>{
+    log('Voice error: '+e.error,'err');
+    if(e.error==='not-allowed') log('Microphone permission denied.','err');
+    setListen(false);
+  };
+  recog.onend=()=>{if(listening)try{recog.start()}catch(e){}};
+  return true;
+}
+
+function toggleMic(){
+  if(listening){
+    setListen(false); if(recog)recog.stop(); log('Voice stopped.','sys');
+  }else{
+    if(!recog){if(!setupRecog())return;}
+    try{recog.start();setListen(true);log('Voice active — speak now.','sys');}
+    catch(e){log('Mic error: '+e.message,'err');}
+  }
+}
+
+function setListen(on){
+  listening=on;
+  const btn=document.getElementById('micBtn'),dot=document.getElementById('micDot'),lbl=document.getElementById('wlbl');
+  if(on){
+    btn.classList.add('on'); dot.className='dot listening';
+    document.getElementById('micTxt').textContent='LISTENING';
+    lbl.textContent='VOICE ACTIVE'; lbl.style.color='var(--green)';
+    startWave();
+  }else{
+    btn.classList.remove('on'); dot.className='dot';
+    document.getElementById('micTxt').textContent='MIC OFF';
+    lbl.textContent='VOICE INACTIVE'; lbl.style.color='var(--dim)';
+    document.getElementById('trx').textContent='Tap MIC and speak a command…';
+    document.getElementById('trx').className='trx';
+    stopWave();
+  }
+}
+
+// ── WAVEFORM ───────────────────────────────────────────────
+function startWave(){
+  (function frame(){
+    if(!listening)return;
+    wSegs.forEach(s=>{s.style.height=(4+Math.random()*22)+'px';s.style.opacity=.25+Math.random()*.75;});
+    wTimer=setTimeout(frame,75);
+  })();
+}
+function stopWave(){
+  clearTimeout(wTimer);
+  wSegs.forEach(s=>{s.style.height='4px';s.style.opacity='.2';});
+}
+
+// ── MODALS ─────────────────────────────────────────────────
+function openM(id){
+  document.getElementById(id).classList.add('show');
+  if(id==='mSpeed')  document.getElementById('sRange').focus();
+  if(id==='mBright') document.getElementById('bRange').focus();
+  if(id==='mTime')   {const e=document.getElementById('tInput');e.value='';e.className='mti';e.focus();}
+}
+function closeM(id){document.getElementById(id).classList.remove('show');}
+
+function submitSpeed(){
+  const v=document.getElementById('sRange').value;
+  closeM('mSpeed');
+  // ESP32: input.startsWith("speed:") → speedLevel = constrain(...,1,10)
+  const cmd='speed:'+v;
+  document.getElementById('sSpd').textContent=v;
+  log('Speed → '+v+' (frameDelay ~'+Math.round(map(+v,1,10,80,8))+'ms)','sys');
+  send(cmd);
+}
+
+function submitBright(){
+  const v=document.getElementById('bRange').value;
+  closeM('mBright');
+  // ESP32: constrain(requested,10,MAX_BRIGHTNESS=80)
+  const cmd='bright:'+v;
+  document.getElementById('sBrt').textContent=v;
+  log('Brightness → '+v+' / 80 (no-resistor cap)','sys');
+  send(cmd);
+}
+
+function submitTime(){
+  const v=document.getElementById('tInput').value.trim();
+  const el=document.getElementById('tInput');
+  if(!/^\d{2}:\d{2}:\d{2}$/.test(v)){
+    el.classList.add('err'); setTimeout(()=>el.classList.remove('err'),900); return;
+  }
+  closeM('mTime');
+  // Send as "time:HH:MM:SS"
+  const cmd='time:'+v;
+  document.getElementById('sTme').textContent=v;
+  log('Time → '+v,'sys');
+  send(cmd);
+}
+
+function fmtTime(el){
+  let r=el.value.replace(/\D/g,'').slice(0,6),o='';
+  if(r.length>=1)o=r.slice(0,2);
+  if(r.length>=3)o+=':'+r.slice(2,4);
+  if(r.length>=5)o+=':'+r.slice(4,6);
+  el.value=o;
+}
+
+// helper matching ESP32's map()
+function map(x,in1,in2,out1,out2){return out1+(x-in1)/(in2-in1)*(out2-out1);}
+
+// Backdrop / Escape
+document.querySelectorAll('.ovl').forEach(o=>{
+  o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show');});
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') document.querySelectorAll('.ovl.show').forEach(o=>o.classList.remove('show'));
+  if(e.key==='Enter'){
+    if(document.getElementById('mSpeed').classList.contains('show'))  submitSpeed();
+    if(document.getElementById('mBright').classList.contains('show')) submitBright();
+  }
+});
+</script>
+</body>
+</html>
